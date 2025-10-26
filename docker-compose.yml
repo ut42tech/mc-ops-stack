@@ -5,16 +5,20 @@ services:
     image: itzg/minecraft-server:latest
     container_name: paper-server
     ports:
-      - "25565:25565"                           # Game Server
-      - "19132:19132/udp"                       # Bedrock Server
+      - "25565:25565"                           # Java Edition ポート
       - "8100:8100"                             # Web UI (BlueMap)
       - "8804:8804"                             # Web UI (Plan)
+      - "4123:4123"                             # LiveKit ポート
     environment:
       EULA: "TRUE"                              # 同意済みなら TRUE
       TYPE: "PAPER"                             # PaperMC を使う
-      VERSION: "1.21.4"                         # お好みのバージョンに置き換え
+      VERSION: "1.21.9"                         # バージョン指定
+      TZ: "Asia/Tokyo"                          # タイムゾーン
       MEMORY: "2G"                              # JVM に割り当てるメモリ
+      LEVEL_TYPE: "FLAT"                        # ワールドタイプ
+      MAX_PLAYERS: "100"                        # 最大プレイヤー数
     volumes:
       - ./data:/data                            # 各種設定・ワールドデータ
       - ./plugins:/data/plugins                 # プラグイン置き場
+      - ./config:/data/config                   # 各種設定置き場
     restart: always
