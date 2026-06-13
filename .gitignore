@@ -9,15 +9,5 @@ servers/*/config/paper-global.yml
 compose.override.yml
 compose.override.yaml
 
-# --- plugin runtime data (bStats, spark, generated configs); keep the dir via .gitkeep ---
-servers/*/plugins/*
-!servers/*/plugins/.gitkeep
-
-# --- runtime / world data (lives in named volumes) ---
-**/world/
-**/world_nether/
-**/world_the_end/
-**/logs/
-**/cache/
-**/libraries/
-**/*.jar
+# --- runtime data: worlds, logs, plugins, live config, server jars (bind-mounted /data) ---
+servers/*/data/

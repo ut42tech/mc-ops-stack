@@ -1,51 +1,54 @@
 # mc-stack — a Velocity proxy + Paper backend network, as Docker Compose.
 #
 # Topology:
-#   player ──(25565)──> proxy (Velocity) ──internal net──> lobby / survival / ... (Paper)
+#   player ──(25565)──> proxy (Velocity) ──internal net──> lobby / survival / creative (Paper)
 #
 # Rules baked in:
 #   - Only `proxy` publishes a host port. Backends are reachable ONLY on the
 #     internal `mc` network, so nobody can connect to an offline-mode backend
 #     directly and spoof a username.
 #   - Every backend runs ONLINE_MODE=FALSE (the proxy authenticates players).
-#   - One shared forwarding secret (./secrets/forwarding.secret) is the single
-#     source of truth, mounted into the proxy AND every backend as a Docker secret.
+#   - One shared forwarding secret (./secrets/forwarding.secret) is mounted into
+#     the proxy AND every backend as a Docker secret.
+#   - Each backend's /data is bind-mounted to ./servers/<name>/data (gitignored)
+#     so worlds, configs, plugins and logs are inspectable on the host.
 #
 # First run:
 #   make secret      # generate ./secrets/forwarding.secret  (once)
-#   make setup       # materialize per-server config from *.example templates
+#   make setup       # materialize per-server config + .env from *.example templates
 #   make up
-
 name: mc-stack
 
 # ── Shared Paper backend definition (DRY) ───────────────────────────────────
-x-paper-common: &paper-common
-  # Minecraft 26.1+ requires Java 25; the `java25` tag is itzg's Java 25 build.
-  # Drop back to `java21` only if you pin MC_VERSION to a 1.21.x release.
+x-paper-common:
+  &paper-common # Minecraft 26.1+ requires Java 25; drop to `java21` only if you pin a 1.21.x MC_VERSION.
   image: itzg/minecraft-server:java25
   restart: unless-stopped
   networks: [mc]
   secrets:
-    - forwarding_secret # mounted read-only at /run/secrets/forwarding_secret
+    - forwarding_secret
   environment: &paper-env
     EULA: "TRUE"
     TYPE: "PAPER"
     VERSION: "${MC_VERSION:-LATEST}"
     USE_AIKAR_FLAGS: "TRUE"
-    # Timezone for log timestamps. Set TZ in your .env (defaults to UTC).
     TZ: "${TZ:-UTC}"
-    # Server operators on every backend. Set OPS in your .env (empty = none);
-    # real online UUIDs reach the backend via modern forwarding, so usernames work.
     OPS: "${OPS:-}"
     # The proxy handles auth, so backends MUST be offline-mode.
     ONLINE_MODE: "FALSE"
-    # itzg reads CFG_FORWARDING_SECRET_FILE (the _FILE convention) into CFG_FORWARDING_SECRET,
-    # then REPLACE_ENV_VARIABLES substitutes ${CFG_FORWARDING_SECRET} inside
-    # config/paper-global.yml at startup. The interpolation prefix defaults to "CFG_",
-    # so the variable MUST be CFG_-prefixed or the substitution is silently skipped
-    # (leaving a literal "${CFG_FORWARDING_SECRET}" and breaking modern forwarding).
+    # itzg reads CFG_FORWARDING_SECRET_FILE into CFG_FORWARDING_SECRET and substitutes
+    # ${CFG_FORWARDING_SECRET} while paper-global.yml syncs from /config into /data/config.
+    # The interpolation prefix defaults to "CFG_", so the variable MUST be CFG_-prefixed.
     CFG_FORWARDING_SECRET_FILE: "/run/secrets/forwarding_secret"
     REPLACE_ENV_VARIABLES: "TRUE"
+    REPLACE_ENV_DURING_SYNC: "TRUE"
+
+# ── Shared superflat world (lobby + creative) ───────────────────────────────
+# bedrock + 59 stone + 3 dirt + 1 grass = 64 layers: bedrock at y=-64, surface at y=0.
+# Baked in at first world-gen, so it is set now rather than tuned later.
+x-flat-world: &flat-world
+  LEVEL_TYPE: "FLAT"
+  GENERATOR_SETTINGS: '{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:stone","height":59},{"block":"minecraft:dirt","height":3},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}'
 
 services:
   # ── Velocity proxy: the only thing exposed to players ─────────────────────
@@ -74,20 +77,24 @@ services:
   lobby:
     <<: *paper-common
     environment:
-      <<: *paper-env
+      <<: [*paper-env, *flat-world]
       MEMORY: "2G"
       MOTD: "Lobby"
       DIFFICULTY: "peaceful"
       MODE: "adventure"
-      # Superflat hub with extra depth to bedrock: bedrock + 59 stone + 3 dirt + 1 grass
-      # = 64 layers (bedrock at y=-64, surface at y=0, ~63 blocks deep). World gen is
-      # baked in at first boot, so this is set now rather than tuned later.
-      LEVEL_TYPE: "FLAT"
-      GENERATOR_SETTINGS: '{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:stone","height":59},{"block":"minecraft:dirt","height":3},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}'
+      GENERATE_STRUCTURES: "false"
+      # Hub behaviour, applied once the server is up: no mob spawning, frozen
+      # daytime and clear weather, and spawn on the surface at 0,0,0.
+      RCON_CMDS_STARTUP: |-
+        gamerule doMobSpawning false
+        gamerule doDaylightCycle false
+        gamerule doWeatherCycle false
+        time set day
+        weather clear
+        setworldspawn 0 0 0
     volumes:
-      - lobby_data:/data
-      - ./servers/lobby/config/paper-global.yml:/data/config/paper-global.yml
-      - ./servers/lobby/plugins:/data/plugins
+      - ./servers/lobby/data:/data
+      - ./servers/lobby/config/paper-global.yml:/config/paper-global.yml:ro
 
   survival:
     <<: *paper-common
@@ -97,38 +104,22 @@ services:
       MOTD: "Survival"
       DIFFICULTY: "normal"
     volumes:
-      - survival_data:/data
-      - ./servers/survival/config/paper-global.yml:/data/config/paper-global.yml
-      - ./servers/survival/plugins:/data/plugins
+      - ./servers/survival/data:/data
+      - ./servers/survival/config/paper-global.yml:/config/paper-global.yml:ro
 
   creative:
     <<: *paper-common
     environment:
-      <<: *paper-env
+      <<: [*paper-env, *flat-world]
       MEMORY: "4G"
       MOTD: "Creative"
       MODE: "creative"
+      # Superflat like the lobby; pin the spawn to the surface at 0,0,0.
+      RCON_CMDS_STARTUP: |-
+        setworldspawn 0 0 0
     volumes:
-      - creative_data:/data
-      - ./servers/creative/config/paper-global.yml:/data/config/paper-global.yml
-      - ./servers/creative/plugins:/data/plugins
-
-  # ── Add a server by copying a backend block, then wire it up in three places:
-  # ──   1) proxy/velocity.toml under [servers]
-  # ──   2) the `volumes:` list at the bottom of this file (e.g. minigames_data)
-  # ──   3) servers/<name>/config/paper-global.yml.example  (so `make setup`
-  # ──      materializes it — a missing template makes Docker create a *directory*
-  # ──      where Paper expects a file, and the backend fails to start). e.g.:
-  # minigames:
-  #   <<: *paper-common
-  #   environment:
-  #     <<: *paper-env
-  #     MEMORY: "2G"
-  #     MOTD: "Minigames"
-  #   volumes:
-  #     - minigames_data:/data
-  #     - ./servers/minigames/config/paper-global.yml:/data/config/paper-global.yml
-  #     - ./servers/minigames/plugins:/data/plugins
+      - ./servers/creative/data:/data
+      - ./servers/creative/config/paper-global.yml:/config/paper-global.yml:ro
 
 networks:
   mc:
@@ -136,9 +127,6 @@ networks:
 
 volumes:
   proxy_data:
-  lobby_data:
-  survival_data:
-  creative_data:
 
 secrets:
   forwarding_secret:
