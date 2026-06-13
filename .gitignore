@@ -1,0 +1,15 @@
+# --- secrets (never commit) ---
+/secrets/forwarding.secret
+.env
+
+# --- live config materialized from *.example (holds the injected secret) ---
+servers/*/config/paper-global.yml
+
+# --- runtime / world data (lives in named volumes) ---
+**/world/
+**/world_nether/
+**/world_the_end/
+**/logs/
+**/cache/
+**/libraries/
+**/*.jar

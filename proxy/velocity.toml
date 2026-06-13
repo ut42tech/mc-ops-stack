@@ -1,0 +1,38 @@
+# Velocity proxy configuration.
+# Docs: https://docs.papermc.io/velocity/configuration/
+config-version = "2.8"
+
+# Players connect here. The container publishes this as 25565 on the host.
+bind = "0.0.0.0:25565"
+
+motd = "<#09add3>tec-nova Nagasaki Server</#09add3>"
+show-max-players = 100
+
+# online-mode = true => the PROXY verifies players against Mojang/Microsoft.
+# Backends stay offline-mode and trust the proxy via the forwarding secret below.
+online-mode = true
+force-key-authentication = true
+
+# "modern" forwarding is the secure scheme for Paper 1.13+. The secret in this
+# file MUST match the `secret:` in every backend's config/paper-global.yml.
+player-info-forwarding-mode = "modern"
+forwarding-secret-file = "/run/secrets/forwarding_secret"
+
+# Backends are addressed by their compose service name on the internal network.
+[servers]
+lobby = "lobby:25565"
+survival = "survival:25565"
+creative = "creative:25565"
+
+# Order tried on join / on kick from a backend. First entry = where players land.
+try = ["lobby"]
+
+[forced-hosts]
+# "survival.example.com" = ["survival"]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+
+[query]
+enabled = false
