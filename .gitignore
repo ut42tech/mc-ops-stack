@@ -5,6 +5,14 @@
 # --- live config materialized from *.example (holds the injected secret) ---
 servers/*/config/paper-global.yml
 
+# --- local-only compose overrides (e.g. temporary resource trims) ---
+compose.override.yml
+compose.override.yaml
+
+# --- plugin runtime data (bStats, spark, generated configs); keep the dir via .gitkeep ---
+servers/*/plugins/*
+!servers/*/plugins/.gitkeep
+
 # --- runtime / world data (lives in named volumes) ---
 **/world/
 **/world_nether/
