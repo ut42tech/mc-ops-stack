@@ -42,6 +42,15 @@ x-paper-common:
     CFG_FORWARDING_SECRET_FILE: "/run/secrets/forwarding_secret"
     REPLACE_ENV_VARIABLES: "TRUE"
     REPLACE_ENV_DURING_SYNC: "TRUE"
+    # Admin worldedit tooling on EVERY backend: auto-downloaded from Modrinth at boot,
+    # matched to TYPE=PAPER + VERSION; remove a line to have itzg delete that plugin.
+    # - fastasyncworldedit bundles WorldEdit (needs Java 21+, satisfied by java25).
+    # - axiom-paper-plugin is only the serverside half: players also need the Axiom
+    #   CLIENT mod + op/axiom.default perm, and MULTIPLAYER USE REQUIRES a commercial
+    #   license or a whitelist from the Axiom Discord.
+    MODRINTH_PROJECTS: |
+      fastasyncworldedit
+      axiom-paper-plugin
 
 # ── Shared superflat world (lobby + creative) ───────────────────────────────
 # bedrock + 59 stone + 3 dirt + 1 grass = 64 layers: bedrock at y=-64, surface at y=0.
@@ -63,6 +72,11 @@ services:
       VELOCITY_VERSION: "LATEST"
       TZ: "${TZ:-UTC}"
       MEMORY: "512M" # Velocity is tiny; it does no world simulation
+      # Network-wide protocol translation lives ONLY on the proxy — Via* must be on
+      # exactly one layer, never also on a backend, or joins break with version
+      # mismatches. mc-proxy can't pull from Modrinth, so use Spiget resource IDs
+      # (auto-latest): ViaVersion=19254, ViaBackwards=27448.
+      SPIGET_PLUGINS: "19254,27448"
     volumes:
       - ./proxy/velocity.toml:/config/velocity.toml:ro
       - proxy_data:/server
