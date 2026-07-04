@@ -12,6 +12,8 @@
 #     the proxy AND every backend as a Docker secret.
 #   - Each backend's /data is bind-mounted to ./servers/<name>/data (gitignored)
 #     so worlds, configs, plugins and logs are inspectable on the host.
+#   - Site-specific values (version, operators, MOTD, plugins, RCON startup
+#     commands) are tuned in .env; this file holds structure and safe defaults.
 #
 # First run:
 #   make secret      # generate ./secrets/forwarding.secret  (once)
@@ -19,41 +21,41 @@
 #   make up
 name: mc-stack
 
-# ── Shared Paper backend definition (DRY) ───────────────────────────────────
-x-paper-common:
-  &paper-common # Minecraft 26.1+ requires Java 25; drop to `java21` only if you pin a 1.21.x MC_VERSION.
+# ── Environment shared by every Paper backend ────────────────────────────────
+x-paper-env: &paper-env
+  EULA: "TRUE"
+  TYPE: "PAPER"
+  VERSION: "${MC_VERSION:-LATEST}"
+  USE_AIKAR_FLAGS: "TRUE"
+  TZ: "${TZ:-UTC}"
+  OPS: "${OPS:-}"
+
+  # The proxy handles auth, so backends MUST be offline-mode.
+  ONLINE_MODE: "FALSE"
+
+  # itzg reads CFG_FORWARDING_SECRET_FILE into CFG_FORWARDING_SECRET and expands
+  # ${CFG_FORWARDING_SECRET} while syncing paper-global.yml from /config into
+  # /data/config. The interpolation prefix defaults to "CFG_" — keep it.
+  CFG_FORWARDING_SECRET_FILE: "/run/secrets/forwarding_secret"
+  REPLACE_ENV_VARIABLES: "TRUE"
+  REPLACE_ENV_DURING_SYNC: "TRUE"
+
+  # Comma-separated Modrinth slugs, resolved against TYPE+VERSION at boot;
+  # removing one has itzg delete it. Plugin notes live in .env.example.
+  MODRINTH_PROJECTS: "${PAPER_MODRINTH_PROJECTS:-fastasyncworldedit,axiom-paper-plugin}"
+
+# ── Service skeleton shared by every Paper backend ───────────────────────────
+x-paper-common: &paper-common
+  # Minecraft 26.1+ requires Java 25; drop to `java21` only when pinning 1.21.x.
   image: itzg/minecraft-server:java25
   restart: unless-stopped
   networks: [mc]
-  secrets:
-    - forwarding_secret
-  environment: &paper-env
-    EULA: "TRUE"
-    TYPE: "PAPER"
-    VERSION: "${MC_VERSION:-LATEST}"
-    USE_AIKAR_FLAGS: "TRUE"
-    TZ: "${TZ:-UTC}"
-    OPS: "${OPS:-}"
-    # The proxy handles auth, so backends MUST be offline-mode.
-    ONLINE_MODE: "FALSE"
-    # itzg reads CFG_FORWARDING_SECRET_FILE into CFG_FORWARDING_SECRET and substitutes
-    # ${CFG_FORWARDING_SECRET} while paper-global.yml syncs from /config into /data/config.
-    # The interpolation prefix defaults to "CFG_", so the variable MUST be CFG_-prefixed.
-    CFG_FORWARDING_SECRET_FILE: "/run/secrets/forwarding_secret"
-    REPLACE_ENV_VARIABLES: "TRUE"
-    REPLACE_ENV_DURING_SYNC: "TRUE"
-    # Plugins on EVERY backend: comma-separated Modrinth slugs, auto-downloaded at
-    # boot and matched to TYPE=PAPER + VERSION; removing one has itzg delete it.
-    # Customize via PAPER_MODRINTH_PROJECTS in .env. Notes on the defaults:
-    # - fastasyncworldedit bundles WorldEdit (needs Java 21+, satisfied by java25).
-    # - axiom-paper-plugin is only the serverside half: players also need the Axiom
-    #   CLIENT mod + op/axiom.default perm, and MULTIPLAYER USE REQUIRES a commercial
-    #   license or a whitelist from the Axiom Discord.
-    MODRINTH_PROJECTS: "${PAPER_MODRINTH_PROJECTS:-fastasyncworldedit,axiom-paper-plugin}"
+  secrets: [forwarding_secret]
+  environment: *paper-env
 
-# ── Shared superflat world (lobby + creative) ───────────────────────────────
-# bedrock + 59 stone + 3 dirt + 1 grass = 64 layers: bedrock at y=-64, surface at y=0.
-# Baked in at first world-gen, so it is set now rather than tuned later.
+# ── Superflat world shared by lobby + creative ───────────────────────────────
+# bedrock + 59 stone + 3 dirt + 1 grass = 64 layers: bedrock at y=-64, surface
+# at y=0. Baked in at first world-gen, so it is set now rather than tuned later.
 x-flat-world: &flat-world
   LEVEL_TYPE: "FLAT"
   GENERATOR_SETTINGS: '{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:stone","height":59},{"block":"minecraft:dirt","height":3},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}'
@@ -65,34 +67,30 @@ services:
     restart: unless-stopped
     networks: [mc]
     ports:
-      - "25565:25565" # <-- the ONLY published port on the whole stack
+      - "25565:25565" # the ONLY published port on the whole stack
     environment:
       TYPE: "VELOCITY"
       VELOCITY_VERSION: "LATEST"
       TZ: "${TZ:-UTC}"
       MEMORY: "512M" # Velocity is tiny; it does no world simulation
-      # Network-wide protocol translation lives ONLY on the proxy — Via* must be on
-      # exactly one layer, never also on a backend, or joins break with version
-      # mismatches. mc-proxy can't pull from Modrinth, so use Spiget resource IDs
-      # (auto-latest). Customize via PROXY_SPIGET_PLUGINS in .env; defaults:
+
+      # Via* protocol translation lives ONLY on the proxy — adding it to a
+      # backend as well breaks joins with version mismatches. mc-proxy can't
+      # pull from Modrinth, so these are Spiget resource IDs (auto-latest):
       # ViaVersion=19254, ViaBackwards=27448.
       SPIGET_PLUGINS: "${PROXY_SPIGET_PLUGINS:-19254,27448}"
-      # itzg copies /config/velocity.toml into /server and expands ${CFG_*} there;
-      # the read-only mount stays untouched. Prefix MUST be CFG_ (the default), so
-      # velocity.toml references ${CFG_MOTD} and the var below is CFG_MOTD.
+
+      # itzg copies /config/velocity.toml into /server and expands ${CFG_*}
+      # there; velocity.toml references ${CFG_MOTD}. The CFG_ prefix is mandatory.
       REPLACE_ENV_VARIABLES: "TRUE"
       CFG_MOTD: "${PROXY_MOTD:-A Minecraft Server}"
     volumes:
       - ./proxy/velocity.toml:/config/velocity.toml:ro
       - proxy_data:/server
-    secrets:
-      - forwarding_secret
-    depends_on:
-      - lobby
-      - survival
-      - creative
+    secrets: [forwarding_secret]
+    depends_on: [lobby, survival, creative]
 
-  # ── Backends ──────────────────────────────────────────────────────────────
+  # ── Paper backends ─────────────────────────────────────────────────────────
   lobby:
     <<: *paper-common
     environment:
@@ -102,10 +100,9 @@ services:
       DIFFICULTY: "peaceful"
       MODE: "adventure"
       GENERATE_STRUCTURES: "false"
-      # Hub behaviour (no mob spawning, frozen daytime/weather, spawn at 0,0,0),
-      # applied once the server is up. The command list lives in .env — compose
-      # ${VAR:-default} interpolation rejects multi-line defaults, so it can't be
-      # inlined here. Empty/unset = itzg skips the RCON startup loop.
+      # Hub behaviour at startup: mob spawning off, frozen day/weather, spawn
+      # at 0,0,0. Commands live in .env — ${VAR:-…} can't hold multi-line
+      # defaults, and empty/unset makes itzg skip the RCON startup loop.
       RCON_CMDS_STARTUP: "${LOBBY_RCON_CMDS_STARTUP:-}"
     volumes:
       - ./servers/lobby/data:/data
@@ -129,8 +126,7 @@ services:
       MEMORY: "4G"
       MOTD: "Creative"
       MODE: "creative"
-      # Superflat like the lobby; pin the spawn to the surface at 0,0,0.
-      # Command list lives in .env (see LOBBY_RCON_CMDS_STARTUP note above).
+      # Superflat like the lobby; pin the spawn to the surface at 0,0,0 (.env).
       RCON_CMDS_STARTUP: "${CREATIVE_RCON_CMDS_STARTUP:-}"
     volumes:
       - ./servers/creative/data:/data
