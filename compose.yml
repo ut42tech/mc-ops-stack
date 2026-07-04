@@ -9,14 +9,18 @@
 #     directly and spoof a username.
 #   - Every backend runs ONLINE_MODE=FALSE (the proxy authenticates players).
 #   - One shared forwarding secret (./secrets/forwarding.secret) is mounted into
-#     the proxy AND every backend as a Docker secret.
+#     the proxy AND every backend as a Docker secret. A second shared secret
+#     (./secrets/rcon.secret) is the backends' RCON password — RCON stays
+#     internal-network-only; it exists so the backup sidecars can pause saves.
 #   - Each backend's /data is bind-mounted to ./servers/<name>/data (gitignored)
 #     so worlds, configs, plugins and logs are inspectable on the host.
+#   - One backup sidecar per backend mounts that /data read-only, publishes no
+#     ports, and archives to ./backups/<name> (gitignored).
 #   - Site-specific values (version, operators, MOTD, plugins, RCON startup
 #     commands) are tuned in .env; this file holds structure and safe defaults.
 #
 # First run:
-#   make secret      # generate ./secrets/forwarding.secret  (once)
+#   make secret      # generate ./secrets/{forwarding,rcon}.secret  (once)
 #   make setup       # materialize per-server config + .env from *.example templates
 #   make up
 name: mc-stack
