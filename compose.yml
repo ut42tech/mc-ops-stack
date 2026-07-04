@@ -77,6 +77,11 @@ services:
       # mismatches. mc-proxy can't pull from Modrinth, so use Spiget resource IDs
       # (auto-latest): ViaVersion=19254, ViaBackwards=27448.
       SPIGET_PLUGINS: "19254,27448"
+      # itzg copies /config/velocity.toml into /server and expands ${CFG_*} there;
+      # the read-only mount stays untouched. Prefix MUST be CFG_ (the default), so
+      # velocity.toml references ${CFG_MOTD} and the var below is CFG_MOTD.
+      REPLACE_ENV_VARIABLES: "TRUE"
+      CFG_MOTD: "${PROXY_MOTD:-A Minecraft Server}"
     volumes:
       - ./proxy/velocity.toml:/config/velocity.toml:ro
       - proxy_data:/server

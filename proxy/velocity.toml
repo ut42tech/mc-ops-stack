@@ -5,7 +5,9 @@ config-version = "2.8"
 # Players connect here. The container publishes this as 25565 on the host.
 bind = "0.0.0.0:25565"
 
-motd = "<#09add3>tec-nova Nagasaki Server</#09add3>"
+# Player-facing MOTD (the one shown in the server list). Set via PROXY_MOTD in
+# .env; itzg replaces this ${CFG_*} placeholder while syncing /config into /server.
+motd = "${CFG_MOTD}"
 show-max-players = 100
 
 # online-mode = true => the PROXY verifies players against Mojang/Microsoft.
