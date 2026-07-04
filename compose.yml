@@ -52,14 +52,27 @@ x-paper-env: &paper-env
   # removing one has itzg delete it. Plugin notes live in .env.example.
   MODRINTH_PROJECTS: "${PAPER_MODRINTH_PROJECTS:-fastasyncworldedit,axiom-paper-plugin}"
 
+# ── Log rotation shared by every service ─────────────────────────────────────
+# Minecraft servers log heavily; the json-file driver is unbounded by
+# default and will eat the disk over months of uptime.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 # ── Service skeleton shared by every Paper backend ───────────────────────────
 x-paper-common: &paper-common
   # Minecraft 26.1+ requires Java 25; drop to `java21` only when pinning 1.21.x.
   image: itzg/minecraft-server:java25
   restart: unless-stopped
+  # Compose kills after 10s by default; Paper needs time to flush world
+  # saves on shutdown or worlds can corrupt.
+  stop_grace_period: 1m
   networks: [mc]
   secrets: [forwarding_secret, rcon_password]
   environment: *paper-env
+  logging: *logging
 
 # ── Superflat world shared by lobby + creative ───────────────────────────────
 # bedrock + 59 stone + 3 dirt + 1 grass = 64 layers: bedrock at y=-64, surface
@@ -81,6 +94,7 @@ x-backup-common: &backup-common
   restart: unless-stopped
   networks: [mc]
   secrets: [rcon_password]
+  logging: *logging
 
 services:
   # ── Velocity proxy: the only thing exposed to players ─────────────────────
@@ -111,6 +125,7 @@ services:
       - proxy_data:/server
     secrets: [forwarding_secret]
     depends_on: [lobby, survival, creative]
+    logging: *logging
 
   # ── Paper backends ─────────────────────────────────────────────────────────
   lobby:
