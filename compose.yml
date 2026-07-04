@@ -63,8 +63,10 @@ x-logging: &logging
 
 # ── Service skeleton shared by every Paper backend ───────────────────────────
 x-paper-common: &paper-common
-  # Minecraft 26.1+ requires Java 25; drop to `java21` only when pinning 1.21.x.
-  image: itzg/minecraft-server:java25
+  # Minecraft 26.1+ requires Java 25; drop to a `*-java21` tag only when
+  # pinning 1.21.x. Pinned to the latest verified stable release (2026-07-04);
+  # Dependabot (.github/dependabot.yml) opens a PR when itzg cuts a new one.
+  image: itzg/minecraft-server:2026.7.0-java25
   restart: unless-stopped
   # Compose kills after 10s by default; Paper needs time to flush world
   # saves on shutdown or worlds can corrupt.
@@ -90,7 +92,9 @@ x-backup-env: &backup-env
 
 # ── Service skeleton shared by every backup sidecar ──────────────────────────
 x-backup-common: &backup-common
-  image: itzg/mc-backup
+  # Pinned to the latest verified stable release (2026-07-04); see
+  # x-paper-common above for the Dependabot note.
+  image: itzg/mc-backup:2026.6.2
   restart: unless-stopped
   networks: [mc]
   secrets: [rcon_password]
@@ -99,14 +103,19 @@ x-backup-common: &backup-common
 services:
   # ── Velocity proxy: the only thing exposed to players ─────────────────────
   proxy:
-    image: itzg/mc-proxy:latest
+    # Latest verified versioned release (itzg cuts these less often than
+    # Velocity itself; see .github/dependabot.yml for future bumps).
+    image: itzg/mc-proxy:2025.10.0-java25
     restart: unless-stopped
     networks: [mc]
     ports:
       - "25565:25565" # the ONLY published port on the whole stack
     environment:
       TYPE: "VELOCITY"
-      VELOCITY_VERSION: "LATEST"
+      # Velocity ships x.y.z-SNAPSHOT version lines; itzg's finest-grained pin
+      # here is the version string — the build within it still floats
+      # (VELOCITY_BUILD_ID defaults to "latest").
+      VELOCITY_VERSION: "3.5.0-SNAPSHOT"
       TZ: "${TZ:-UTC}"
       MEMORY: "512M" # Velocity is tiny; it does no world simulation
 
