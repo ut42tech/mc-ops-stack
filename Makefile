@@ -1,14 +1,16 @@
 .PHONY: secret setup up down logs restart ps
 
-## Generate the shared forwarding secret (single source of truth). Run once.
+## Generate the shared forwarding + RCON secrets (single source of truth). Run once.
 secret:
 	@mkdir -p secrets
-	@if [ -s secrets/forwarding.secret ]; then \
-		echo "secrets/forwarding.secret already exists; leaving it untouched."; \
-	else \
-		openssl rand -hex 24 > secrets/forwarding.secret; \
-		echo "Wrote secrets/forwarding.secret"; \
-	fi
+	@for f in forwarding.secret rcon.secret; do \
+		if [ -s secrets/$$f ]; then \
+			echo "secrets/$$f already exists; leaving it untouched."; \
+		else \
+			openssl rand -hex 24 > secrets/$$f; \
+			echo "Wrote secrets/$$f"; \
+		fi; \
+	done
 
 ## Materialize per-server live config from committed *.example templates.
 setup:

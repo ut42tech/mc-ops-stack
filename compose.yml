@@ -40,6 +40,10 @@ x-paper-env: &paper-env
   REPLACE_ENV_VARIABLES: "TRUE"
   REPLACE_ENV_DURING_SYNC: "TRUE"
 
+  # RCON is reachable only on the internal `mc` network (no port is published),
+  # but still needs a password so the backup sidecars can pause/resume saves.
+  RCON_PASSWORD_FILE: "/run/secrets/rcon_password"
+
   # Comma-separated Modrinth slugs, resolved against TYPE+VERSION at boot;
   # removing one has itzg delete it. Plugin notes live in .env.example.
   MODRINTH_PROJECTS: "${PAPER_MODRINTH_PROJECTS:-fastasyncworldedit,axiom-paper-plugin}"
@@ -50,7 +54,7 @@ x-paper-common: &paper-common
   image: itzg/minecraft-server:java25
   restart: unless-stopped
   networks: [mc]
-  secrets: [forwarding_secret]
+  secrets: [forwarding_secret, rcon_password]
   environment: *paper-env
 
 # ── Superflat world shared by lobby + creative ───────────────────────────────
@@ -59,6 +63,20 @@ x-paper-common: &paper-common
 x-flat-world: &flat-world
   LEVEL_TYPE: "FLAT"
   GENERATOR_SETTINGS: '{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:stone","height":59},{"block":"minecraft:dirt","height":3},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}'
+
+# ── Environment shared by every backup sidecar ───────────────────────────────
+x-backup-env: &backup-env
+  BACKUP_INTERVAL: "${BACKUP_INTERVAL:-24h}"
+  PRUNE_BACKUPS_DAYS: "${PRUNE_BACKUPS_DAYS:-7}"
+  RCON_PASSWORD_FILE: "/run/secrets/rcon_password"
+  TZ: "${TZ:-UTC}"
+
+# ── Service skeleton shared by every backup sidecar ──────────────────────────
+x-backup-common: &backup-common
+  image: itzg/mc-backup
+  restart: unless-stopped
+  networks: [mc]
+  secrets: [rcon_password]
 
 services:
   # ── Velocity proxy: the only thing exposed to players ─────────────────────
@@ -132,6 +150,40 @@ services:
       - ./servers/creative/data:/data
       - ./servers/creative/config/paper-global.yml:/config/paper-global.yml:ro
 
+  # ── Backup sidecars: one per backend ───────────────────────────────────────
+  # Each pauses saves over RCON (save-off), tars /data to ./backups/<name>,
+  # then re-enables saves (save-all/save-on). Interval + retention come from
+  # .env (BACKUP_INTERVAL, PRUNE_BACKUPS_DAYS); no ports are published.
+  backup-lobby:
+    <<: *backup-common
+    environment:
+      <<: *backup-env
+      RCON_HOST: "lobby"
+    volumes:
+      - ./servers/lobby/data:/data:ro   # tar reads the world; never writes
+      - ./backups/lobby:/backups
+    depends_on: [lobby]
+
+  backup-survival:
+    <<: *backup-common
+    environment:
+      <<: *backup-env
+      RCON_HOST: "survival"
+    volumes:
+      - ./servers/survival/data:/data:ro   # tar reads the world; never writes
+      - ./backups/survival:/backups
+    depends_on: [survival]
+
+  backup-creative:
+    <<: *backup-common
+    environment:
+      <<: *backup-env
+      RCON_HOST: "creative"
+    volumes:
+      - ./servers/creative/data:/data:ro   # tar reads the world; never writes
+      - ./backups/creative:/backups
+    depends_on: [creative]
+
 networks:
   mc:
     driver: bridge # services resolve each other by name (lobby, survival, ...)
@@ -142,3 +194,5 @@ volumes:
 secrets:
   forwarding_secret:
     file: ./secrets/forwarding.secret # gitignored; created by `make secret`
+  rcon_password:
+    file: ./secrets/rcon.secret # gitignored; created by `make secret`

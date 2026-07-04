@@ -1,5 +1,6 @@
 # --- secrets (never commit) ---
 /secrets/forwarding.secret
+/secrets/rcon.secret
 .env
 
 # --- live config materialized from *.example (holds the injected secret) ---
@@ -11,3 +12,6 @@ compose.override.yaml
 
 # --- runtime data: worlds, logs, plugins, live config, server jars (bind-mounted /data) ---
 servers/*/data/
+
+# --- backup archives written by the mc-backup sidecars ---
+/backups/
