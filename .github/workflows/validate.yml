@@ -1,0 +1,18 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Live config, .env and secrets are gitignored; materialize them the
+      # same way a fresh site would before compose can validate the stack.
+      - name: Materialize secrets, live config and .env
+        run: make secret setup
+      - name: Validate compose file (YAML, anchor merges, secrets wiring)
+        run: docker compose config -q
