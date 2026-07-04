@@ -42,15 +42,14 @@ x-paper-common:
     CFG_FORWARDING_SECRET_FILE: "/run/secrets/forwarding_secret"
     REPLACE_ENV_VARIABLES: "TRUE"
     REPLACE_ENV_DURING_SYNC: "TRUE"
-    # Admin worldedit tooling on EVERY backend: auto-downloaded from Modrinth at boot,
-    # matched to TYPE=PAPER + VERSION; remove a line to have itzg delete that plugin.
+    # Plugins on EVERY backend: comma-separated Modrinth slugs, auto-downloaded at
+    # boot and matched to TYPE=PAPER + VERSION; removing one has itzg delete it.
+    # Customize via PAPER_MODRINTH_PROJECTS in .env. Notes on the defaults:
     # - fastasyncworldedit bundles WorldEdit (needs Java 21+, satisfied by java25).
     # - axiom-paper-plugin is only the serverside half: players also need the Axiom
     #   CLIENT mod + op/axiom.default perm, and MULTIPLAYER USE REQUIRES a commercial
     #   license or a whitelist from the Axiom Discord.
-    MODRINTH_PROJECTS: |
-      fastasyncworldedit
-      axiom-paper-plugin
+    MODRINTH_PROJECTS: "${PAPER_MODRINTH_PROJECTS:-fastasyncworldedit,axiom-paper-plugin}"
 
 # ── Shared superflat world (lobby + creative) ───────────────────────────────
 # bedrock + 59 stone + 3 dirt + 1 grass = 64 layers: bedrock at y=-64, surface at y=0.
@@ -75,8 +74,9 @@ services:
       # Network-wide protocol translation lives ONLY on the proxy — Via* must be on
       # exactly one layer, never also on a backend, or joins break with version
       # mismatches. mc-proxy can't pull from Modrinth, so use Spiget resource IDs
-      # (auto-latest): ViaVersion=19254, ViaBackwards=27448.
-      SPIGET_PLUGINS: "19254,27448"
+      # (auto-latest). Customize via PROXY_SPIGET_PLUGINS in .env; defaults:
+      # ViaVersion=19254, ViaBackwards=27448.
+      SPIGET_PLUGINS: "${PROXY_SPIGET_PLUGINS:-19254,27448}"
       # itzg copies /config/velocity.toml into /server and expands ${CFG_*} there;
       # the read-only mount stays untouched. Prefix MUST be CFG_ (the default), so
       # velocity.toml references ${CFG_MOTD} and the var below is CFG_MOTD.
@@ -102,15 +102,11 @@ services:
       DIFFICULTY: "peaceful"
       MODE: "adventure"
       GENERATE_STRUCTURES: "false"
-      # Hub behaviour, applied once the server is up: no mob spawning, frozen
-      # daytime and clear weather, and spawn on the surface at 0,0,0.
-      RCON_CMDS_STARTUP: |-
-        gamerule doMobSpawning false
-        gamerule doDaylightCycle false
-        gamerule doWeatherCycle false
-        time set day
-        weather clear
-        setworldspawn 0 0 0
+      # Hub behaviour (no mob spawning, frozen daytime/weather, spawn at 0,0,0),
+      # applied once the server is up. The command list lives in .env — compose
+      # ${VAR:-default} interpolation rejects multi-line defaults, so it can't be
+      # inlined here. Empty/unset = itzg skips the RCON startup loop.
+      RCON_CMDS_STARTUP: "${LOBBY_RCON_CMDS_STARTUP:-}"
     volumes:
       - ./servers/lobby/data:/data
       - ./servers/lobby/config/paper-global.yml:/config/paper-global.yml:ro
@@ -134,8 +130,8 @@ services:
       MOTD: "Creative"
       MODE: "creative"
       # Superflat like the lobby; pin the spawn to the surface at 0,0,0.
-      RCON_CMDS_STARTUP: |-
-        setworldspawn 0 0 0
+      # Command list lives in .env (see LOBBY_RCON_CMDS_STARTUP note above).
+      RCON_CMDS_STARTUP: "${CREATIVE_RCON_CMDS_STARTUP:-}"
     volumes:
       - ./servers/creative/data:/data
       - ./servers/creative/config/paper-global.yml:/config/paper-global.yml:ro

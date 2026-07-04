@@ -40,7 +40,8 @@ Template pattern: committed `*.example` files are copied to gitignored live file
 
 ## Conventions
 
-- **Plugins are declared, never committed as jars**: `MODRINTH_PROJECTS` on backends (matched to TYPE+VERSION at boot), `SPIGET_PLUGINS` (resource IDs) on the proxy since mc-proxy can't pull from Modrinth. Removing a line makes itzg delete that plugin.
+- **Plugins are declared, never committed as jars**: `MODRINTH_PROJECTS` on backends (matched to TYPE+VERSION at boot), `SPIGET_PLUGINS` (resource IDs) on the proxy since mc-proxy can't pull from Modrinth. Removing an entry makes itzg delete that plugin. Both are `.env`-driven (`PAPER_MODRINTH_PROJECTS`, `PROXY_SPIGET_PLUGINS`, comma-separated) with defaults in `compose.yml`.
+- **RCON startup commands live in `.env`** (`LOBBY_RCON_CMDS_STARTUP`, `CREATIVE_RCON_CMDS_STARTUP`, newline-delimited inside double quotes) — compose `${VAR:-default}` interpolation rejects multi-line defaults, so they can't fall back in `compose.yml`. Command failures are non-fatal and only visible via `docker compose logs <backend> | grep "Rcon loop"`. Since MC 1.21.11 (26.x) gamerules use snake_case registry names (`spawn_mobs`, `advance_time`, `advance_weather`); old camelCase names fail with "Incorrect argument for command".
 - **Via\* (protocol translation) lives ONLY on the proxy.** Adding it to a backend too breaks joins with version mismatches.
 - **Version coupling**: `MC_VERSION` (in `.env`, e.g. `26.1.2`) and the image Java tag move together — MC 26.1+ requires `itzg/minecraft-server:java25`; only drop to `java21` when pinning a 1.21.x version. Pin latest-stable rather than `LATEST`.
 - **KISS**: minimal correct config only — Paper fills unspecified keys with defaults, so `paper-global.yml` holds just the forwarding block. Don't add preemptive tuning. Personal/site values (OPS, TZ, PROXY_MOTD) go through `.env`, not hardcoded in compose.
