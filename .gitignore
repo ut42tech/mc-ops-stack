@@ -10,8 +10,11 @@ servers/*/config/paper-global.yml
 compose.override.yml
 compose.override.yaml
 
-# --- runtime data: worlds, logs, plugins, live config, server jars (bind-mounted /data) ---
+# --- runtime data: worlds, logs, live config, server jars (bind-mounted /data) ---
 servers/*/data/
+
+# --- plugin jars/configs: bind-mounted separately at /data/plugins ---
+servers/*/plugins/
 
 # --- backup archives written by the mc-backup sidecars ---
 /backups/

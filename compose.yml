@@ -13,7 +13,10 @@
 #     (./secrets/rcon.secret) is the backends' RCON password — RCON stays
 #     internal-network-only; it exists so the backup sidecars can pause saves.
 #   - Each backend's /data is bind-mounted to ./servers/<name>/data (gitignored)
-#     so worlds, configs, plugins and logs are inspectable on the host.
+#     so worlds, configs and logs are inspectable on the host. /data/plugins is
+#     additionally bind-mounted to its own ./servers/<name>/plugins (gitignored)
+#     since plugin jars/configs get touched far more often than the rest of
+#     /data — a stable, top-level path beats digging through world/log churn.
 #   - One backup sidecar per backend mounts that /data read-only, publishes no
 #     ports, and archives to ./backups/<name> (gitignored).
 #   - Site-specific values (version, operators, MOTD, plugins, RCON startup
@@ -152,6 +155,7 @@ services:
       RCON_CMDS_STARTUP: "${LOBBY_RCON_CMDS_STARTUP:-}"
     volumes:
       - ./servers/lobby/data:/data
+      - ./servers/lobby/plugins:/data/plugins
       - ./servers/lobby/config/paper-global.yml:/config/paper-global.yml:ro
 
   survival:
@@ -163,6 +167,7 @@ services:
       DIFFICULTY: "normal"
     volumes:
       - ./servers/survival/data:/data
+      - ./servers/survival/plugins:/data/plugins
       - ./servers/survival/config/paper-global.yml:/config/paper-global.yml:ro
 
   creative:
@@ -176,6 +181,7 @@ services:
       RCON_CMDS_STARTUP: "${CREATIVE_RCON_CMDS_STARTUP:-}"
     volumes:
       - ./servers/creative/data:/data
+      - ./servers/creative/plugins:/data/plugins
       - ./servers/creative/config/paper-global.yml:/config/paper-global.yml:ro
 
   # ── Backup sidecars: one per backend ───────────────────────────────────────
@@ -189,6 +195,7 @@ services:
       RCON_HOST: "lobby"
     volumes:
       - ./servers/lobby/data:/data:ro   # tar reads the world; never writes
+      - ./servers/lobby/plugins:/data/plugins:ro   # plugins live outside data/; include in the tar too
       - ./backups/lobby:/backups
     depends_on: [lobby]
 
@@ -199,6 +206,7 @@ services:
       RCON_HOST: "survival"
     volumes:
       - ./servers/survival/data:/data:ro   # tar reads the world; never writes
+      - ./servers/survival/plugins:/data/plugins:ro   # plugins live outside data/; include in the tar too
       - ./backups/survival:/backups
     depends_on: [survival]
 
@@ -209,6 +217,7 @@ services:
       RCON_HOST: "creative"
     volumes:
       - ./servers/creative/data:/data:ro   # tar reads the world; never writes
+      - ./servers/creative/plugins:/data/plugins:ro   # plugins live outside data/; include in the tar too
       - ./backups/creative:/backups
     depends_on: [creative]
 
