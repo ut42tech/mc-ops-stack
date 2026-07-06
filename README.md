@@ -88,7 +88,7 @@ values are re-read every time a container is (re)created:
 ```
 .env ──────(compose ${VAR:-default})───▶ container env ──┐
                                                          ├─(itzg boot: sync + ${CFG_*} expansion)─▶ live config
-proxy/ + paper/ ──(mounted read-only)──▶ mounted config ──┘
+proxy/ + paper/ ──(mounted read-only)──▶ mounted config ─┘
 ```
 
 ## Quick start
