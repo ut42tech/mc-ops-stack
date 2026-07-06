@@ -24,7 +24,7 @@
 #
 # First run:
 #   make secret      # generate ./secrets/{forwarding,rcon}.secret  (once)
-#   make setup       # materialize per-server config + .env from *.example templates
+#   make setup       # copy .env from .env.example
 #   make up
 name: mc-stack
 
@@ -154,7 +154,7 @@ services:
     volumes:
       - ./servers/lobby/data:/data
       - ./servers/lobby/plugins:/data/plugins
-      - ./servers/lobby/config/paper-global.yml:/config/paper-global.yml:ro
+      - ./paper/paper-global.yml:/config/paper-global.yml:ro
 
   survival:
     <<: *paper-common
@@ -168,7 +168,7 @@ services:
     volumes:
       - ./servers/survival/data:/data
       - ./servers/survival/plugins:/data/plugins
-      - ./servers/survival/config/paper-global.yml:/config/paper-global.yml:ro
+      - ./paper/paper-global.yml:/config/paper-global.yml:ro
 
   creative:
     <<: *paper-common
@@ -184,7 +184,7 @@ services:
     volumes:
       - ./servers/creative/data:/data
       - ./servers/creative/plugins:/data/plugins
-      - ./servers/creative/config/paper-global.yml:/config/paper-global.yml:ro
+      - ./paper/paper-global.yml:/config/paper-global.yml:ro
 
   # ── Backup sidecars: one per backend ───────────────────────────────────────
   # Each pauses saves over RCON (save-off), flushes with save-all, tars /data
