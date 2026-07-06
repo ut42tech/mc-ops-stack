@@ -4,7 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Minecraft server network (Velocity proxy + Paper backends) defined entirely as Docker Compose on [itzg](https://github.com/itzg/docker-minecraft-server) images. There is no application code, build step, or test suite — the "code" is `compose.yml`, `proxy/velocity.toml`, the shared `paper/paper-global.yml`, and the Makefile.
+`mc-ops-stack` is a spec-driven template for a Minecraft server network
+(Velocity proxy + Paper backends) defined entirely as Docker Compose on
+[itzg](https://github.com/itzg/docker-minecraft-server) images. There is no
+application code, build step, or test suite — the "code" is `compose.yml`,
+`.env.example`, `proxy/velocity.toml`, the shared `paper/paper-global.yml`, the
+Makefile, and the operations docs.
 
 ## Commands
 

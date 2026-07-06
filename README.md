@@ -1,12 +1,35 @@
-# mc-stack
+# mc-ops-stack
 
-A small, opinionated **Velocity proxy + Paper backend** Minecraft network,
-defined entirely as Docker Compose. Built on the
-[itzg](https://github.com/itzg/docker-minecraft-server) images.
+[![validate](https://github.com/ut42tech/mc-ops-stack/actions/workflows/validate.yml/badge.svg)](https://github.com/ut42tech/mc-ops-stack/actions/workflows/validate.yml)
+[![Template](https://img.shields.io/badge/repository-template-2ea44f)](https://github.com/ut42tech/mc-ops-stack/generate)
+[![Docker Compose](https://img.shields.io/badge/runtime-Docker%20Compose-2496ed)](https://docs.docker.com/compose/)
+[![Minecraft](https://img.shields.io/badge/Minecraft-Velocity%20%2B%20Paper-62b47a)](https://papermc.io/)
+[![License](https://img.shields.io/github/license/ut42tech/mc-ops-stack)](LICENSE)
+
+An opinionated, spec-driven **Docker Compose template** for operating a
+**Velocity proxy + Paper backend** Minecraft network. It is built on the
+[itzg](https://github.com/itzg/docker-minecraft-server) images and structured so
+site-specific choices live in declarative files that are easy to review, diff,
+and manage with coding agents such as Claude Code.
 
 Backends run Minecraft **26.1.2** (pinned in `.env`) on Paper / Java 25. Every
 image — proxy, backends, and the backup sidecars — is pinned to a specific
 verified release; see **Versioning & updates** below.
+
+## Why this template
+
+- **Spec-driven operations.** The network topology, image pins, memory limits,
+  plugin lists, startup commands, backups, and retention policy are captured in
+  `compose.yml`, `.env`, and small committed config files.
+- **Agent-friendly maintenance.** `README.md`, `CLAUDE.md`, and
+  `docs/operations.md` document the invariants an AI coding agent should preserve
+  while updating versions, adding backends, or changing server policy.
+- **Secure-by-default network shape.** Only Velocity publishes a host port;
+  Paper backends stay offline-mode on an internal Docker network and trust
+  player identity only through Velocity modern forwarding.
+- **Practical operations included.** The template includes generated secrets,
+  Modrinth plugin declaration, automated backup sidecars, restore notes,
+  Dependabot image bumps, and CI validation with `docker compose config`.
 
 ## Architecture
 
@@ -63,7 +86,7 @@ flowchart LR
 │   └── workflows/
 │       └── validate.yml   # CI: `docker compose config` on push/PR
 ├── compose.yml            # the whole network: shared anchors + per-service overrides
-├── .env.example           # all tunables, documented → copied to .env by `make setup`
+├── .env.example           # all tunables, documented -> copied to .env by `make setup`
 ├── Makefile               # secret / setup / up / down / restart / ps / logs
 ├── docs/
 │   └── operations.md      # backup/restore runbook, update procedure
@@ -90,6 +113,19 @@ values are re-read every time a container is (re)created:
                                                          ├─(itzg boot: sync + ${CFG_*} expansion)─▶ live config
 proxy/ + paper/ ──(mounted read-only)──▶ mounted config ─┘
 ```
+
+## Use as a template
+
+Create a repository from this template, then keep the committed files as the
+server's operating spec:
+
+1. Edit `.env.example` defaults for your site policy, then let `make setup`
+   materialize a local `.env`.
+2. Keep runtime state (`servers/`, `backups/`, generated secrets, plugin jars)
+   out of git.
+3. Ask Claude Code or another coding agent to make reviewed changes to the spec:
+   add a backend, bump images, adjust plugins, or update operational docs.
+4. Validate every change with `docker compose config`; CI runs the same check.
 
 ## Quick start
 

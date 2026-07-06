@@ -1,4 +1,4 @@
-# mc-stack — a Velocity proxy + Paper backend network, as Docker Compose.
+# mc-ops-stack — a Velocity proxy + Paper backend network, as Docker Compose.
 #
 # Topology:
 #   player ──(25565)──> proxy (Velocity) ──internal net──> lobby / survival / creative (Paper)
@@ -26,7 +26,7 @@
 #   make secret      # generate ./secrets/{forwarding,rcon}.secret  (once)
 #   make setup       # copy .env from .env.example
 #   make up
-name: mc-stack
+name: mc-ops-stack
 
 # ── Environment shared by every Paper backend ────────────────────────────────
 x-paper-env: &paper-env
