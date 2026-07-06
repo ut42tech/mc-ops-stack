@@ -4,8 +4,9 @@ A small, opinionated **Velocity proxy + Paper backend** Minecraft network,
 defined entirely as Docker Compose. Built on the
 [itzg](https://github.com/itzg/docker-minecraft-server) images.
 
-Backends run Minecraft **26.1.2** (pinned in `.env`) on Paper / Java 25;
-Velocity tracks its latest build.
+Backends run Minecraft **26.1.2** (pinned in `.env`) on Paper / Java 25. Every
+image — proxy, backends, and the backup sidecars — is pinned to a specific
+verified release; see **Versioning & updates** below.
 
 ## Architecture
 
@@ -44,19 +45,35 @@ flowchart LR
   forwarding, so a backend only trusts player info that came from _this_ proxy.
   Generated once by `make secret`, mounted everywhere as a Docker secret, never
   committed.
+- **Automated backups, one sidecar per backend.** An `itzg/mc-backup` sidecar
+  (`backup-lobby`/`backup-survival`/`backup-creative`) pauses saves over RCON
+  (a second secret, `secrets/rcon.secret`), tars the backend's read-only
+  `/data` mount, resumes saves, and prunes old archives — all `.env`-tunable.
+- **Operational hardening.** `stop_grace_period: 1m` gives Paper time to flush
+  world saves on shutdown; every service's logs are capped (json-file,
+  10 MB × 5 files) so long uptimes don't fill the disk.
 - **Repo holds structure; sites tune `.env`; runtime state stays out of git.**
 
 ## Repository structure
 
 ```
 .
+├── .github/
+│   ├── dependabot.yml     # weekly PRs: image tags (docker-compose) + actions
+│   └── workflows/
+│       └── validate.yml   # CI: `docker compose config` on push/PR
 ├── compose.yml            # the whole network: shared anchors + per-service overrides
 ├── .env.example           # all tunables, documented → copied to .env by `make setup`
 ├── Makefile               # secret / setup / up / down / restart / ps / logs
+├── docs/
+│   └── operations.md      # backup/restore runbook, update procedure
 ├── proxy/
 │   └── velocity.toml      # proxy config template (mounted read-only)
 ├── secrets/
-│   └── forwarding.secret  # shared HMAC secret   (gitignored; `make secret`)
+│   ├── forwarding.secret  # shared HMAC secret       (gitignored; `make secret`)
+│   └── rcon.secret        # backends' RCON password  (gitignored; `make secret`)
+├── backups/
+│   └── <lobby|survival|creative>/  # tar archives from the backup sidecars (gitignored)
 └── servers/
     └── <lobby|survival|creative>/
         ├── config/
@@ -77,7 +94,7 @@ re-read every time a container is (re)created:
 ## Quick start
 
 ```bash
-make secret    # generate secrets/forwarding.secret  (run once)
+make secret    # generate secrets/{forwarding,rcon}.secret  (run once)
 make setup     # create live config + .env from templates
 $EDITOR .env   # set OPS (your username), TZ, PROXY_MOTD, ...
 make up        # docker compose up -d
@@ -95,7 +112,7 @@ recreated).
 
 | Variable                     | Default                                | Purpose                                                                  |
 | ---------------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
-| `MC_VERSION`                 | `26.1.2`                               | Minecraft version for all backends. 26.1+ needs the `java25` image tag.  |
+| `MC_VERSION`                 | `26.1.2`                               | Minecraft version for all backends. 26.1+ needs a `*-java25` backend image tag. |
 | `OPS`                        | _(empty)_                              | Comma-separated operator usernames, applied to every backend.            |
 | `TZ`                         | `UTC`                                  | Timezone for log timestamps, e.g. `Asia/Tokyo`.                          |
 | `PROXY_MOTD`                 | `A Minecraft Server`                   | Server-list MOTD (the proxy's — the only one players see). MiniMessage tags allowed. |
@@ -103,6 +120,8 @@ recreated).
 | `PROXY_SPIGET_PLUGINS`       | `19254,27448`                          | Plugins on **the proxy**: comma-separated Spiget resource IDs.           |
 | `LOBBY_RCON_CMDS_STARTUP`    | _(empty = run nothing)_                | Console commands run each time `lobby` finishes booting.                 |
 | `CREATIVE_RCON_CMDS_STARTUP` | _(empty = run nothing)_                | Same for `creative`.                                                     |
+| `BACKUP_INTERVAL`            | `24h`                                  | How often each backup sidecar pauses saves and archives `/data`.         |
+| `PRUNE_BACKUPS_DAYS`         | `7`                                     | Delete archives under `backups/<name>/` older than this many days.      |
 
 ### Startup commands (RCON)
 
@@ -136,6 +155,39 @@ entry is removed.
 - Axiom multiplayer use requires a commercial license or a whitelist from the
   Axiom Discord; players also need the Axiom client mod and op permission.
 
+## Backups
+
+Each backend has a paired `itzg/mc-backup` sidecar (`backup-lobby`,
+`backup-survival`, `backup-creative`): every `BACKUP_INTERVAL` it pauses world
+saves over RCON, tars the backend's read-only `/data` mount into
+`backups/<name>/`, then resumes saves. Archives older than
+`PRUNE_BACKUPS_DAYS` are pruned automatically. A backup also runs a couple of
+minutes after every `docker compose up`, on top of the interval.
+
+Trigger one on demand:
+
+```bash
+docker compose exec backup-lobby backup now
+```
+
+Tune both knobs in `.env` (`BACKUP_INTERVAL`, `PRUNE_BACKUPS_DAYS`). For the
+restore procedure, see [`docs/operations.md`](docs/operations.md).
+
+## Versioning & updates
+
+Every image is pinned to a specific verified release —
+`itzg/minecraft-server:2026.7.0-java25` (backends), `itzg/mc-proxy:2025.10.0-java25`
+(proxy), `itzg/mc-backup:2026.6.2` (backup sidecars) — plus
+`VELOCITY_VERSION: "3.5.0-SNAPSHOT"` (the finest pin itzg exposes; the build
+within that version string still floats).
+
+[Dependabot](.github/dependabot.yml) opens weekly PRs bumping those image tags
+and GitHub Actions; CI ([`.github/workflows/validate.yml`](.github/workflows/validate.yml))
+runs `docker compose config` on every push to `main` and every PR. `MC_VERSION`
+(the actual Minecraft version, in `.env`) is a separate, manual, coupled bump —
+change it together with the backend image's `-javaNN` variant (26.1+ needs
+`java25`; only drop to `java21` when pinning a 1.21.x version).
+
 ## Add a server
 
 1. Copy a backend block in `compose.yml` (e.g. `survival:`) under a new name,
@@ -152,4 +204,5 @@ entry is removed.
 | Backend kicks forwarded players             | Proxy and backend secrets differ — inspect what Paper actually loaded: `docker compose exec lobby grep secret /data/config/paper-global.yml` |
 | Startup commands silently not applied       | `docker compose logs <backend> \| grep "Rcon loop"` — failed commands are non-fatal; see the gamerule naming note above.          |
 | `.env` change has no effect                 | Environment changes need `docker compose up -d` (recreate), not `make restart`.                                                   |
+| Backups not appearing under `backups/<name>/` | `docker compose logs backup-<name>` — RCON auth/secret issues show there.                                                       |
 | Compose YAML / anchor doubts                | `docker compose config` renders the merged result without starting anything.                                                      |

@@ -9,14 +9,18 @@
 #     directly and spoof a username.
 #   - Every backend runs ONLINE_MODE=FALSE (the proxy authenticates players).
 #   - One shared forwarding secret (./secrets/forwarding.secret) is mounted into
-#     the proxy AND every backend as a Docker secret.
+#     the proxy AND every backend as a Docker secret. A second shared secret
+#     (./secrets/rcon.secret) is the backends' RCON password — RCON stays
+#     internal-network-only; it exists so the backup sidecars can pause saves.
 #   - Each backend's /data is bind-mounted to ./servers/<name>/data (gitignored)
 #     so worlds, configs, plugins and logs are inspectable on the host.
+#   - One backup sidecar per backend mounts that /data read-only, publishes no
+#     ports, and archives to ./backups/<name> (gitignored).
 #   - Site-specific values (version, operators, MOTD, plugins, RCON startup
 #     commands) are tuned in .env; this file holds structure and safe defaults.
 #
 # First run:
-#   make secret      # generate ./secrets/forwarding.secret  (once)
+#   make secret      # generate ./secrets/{forwarding,rcon}.secret  (once)
 #   make setup       # materialize per-server config + .env from *.example templates
 #   make up
 name: mc-stack
@@ -40,18 +44,37 @@ x-paper-env: &paper-env
   REPLACE_ENV_VARIABLES: "TRUE"
   REPLACE_ENV_DURING_SYNC: "TRUE"
 
+  # RCON is reachable only on the internal `mc` network (no port is published),
+  # but still needs a password so the backup sidecars can pause/resume saves.
+  RCON_PASSWORD_FILE: "/run/secrets/rcon_password"
+
   # Comma-separated Modrinth slugs, resolved against TYPE+VERSION at boot;
   # removing one has itzg delete it. Plugin notes live in .env.example.
   MODRINTH_PROJECTS: "${PAPER_MODRINTH_PROJECTS:-fastasyncworldedit,axiom-paper-plugin}"
 
+# ── Log rotation shared by every service ─────────────────────────────────────
+# Minecraft servers log heavily; the json-file driver is unbounded by
+# default and will eat the disk over months of uptime.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 # ── Service skeleton shared by every Paper backend ───────────────────────────
 x-paper-common: &paper-common
-  # Minecraft 26.1+ requires Java 25; drop to `java21` only when pinning 1.21.x.
-  image: itzg/minecraft-server:java25
+  # Minecraft 26.1+ requires Java 25; drop to a `*-java21` tag only when
+  # pinning 1.21.x. Pinned to the latest verified stable release (2026-07-04);
+  # Dependabot (.github/dependabot.yml) opens a PR when itzg cuts a new one.
+  image: itzg/minecraft-server:2026.7.0-java25
   restart: unless-stopped
+  # Compose kills after 10s by default; Paper needs time to flush world
+  # saves on shutdown or worlds can corrupt.
+  stop_grace_period: 1m
   networks: [mc]
-  secrets: [forwarding_secret]
+  secrets: [forwarding_secret, rcon_password]
   environment: *paper-env
+  logging: *logging
 
 # ── Superflat world shared by lobby + creative ───────────────────────────────
 # bedrock + 59 stone + 3 dirt + 1 grass = 64 layers: bedrock at y=-64, surface
@@ -60,17 +83,39 @@ x-flat-world: &flat-world
   LEVEL_TYPE: "FLAT"
   GENERATOR_SETTINGS: '{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:stone","height":59},{"block":"minecraft:dirt","height":3},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}'
 
+# ── Environment shared by every backup sidecar ───────────────────────────────
+x-backup-env: &backup-env
+  BACKUP_INTERVAL: "${BACKUP_INTERVAL:-24h}"
+  PRUNE_BACKUPS_DAYS: "${PRUNE_BACKUPS_DAYS:-7}"
+  RCON_PASSWORD_FILE: "/run/secrets/rcon_password"
+  TZ: "${TZ:-UTC}"
+
+# ── Service skeleton shared by every backup sidecar ──────────────────────────
+x-backup-common: &backup-common
+  # Pinned to the latest verified stable release (2026-07-04); see
+  # x-paper-common above for the Dependabot note.
+  image: itzg/mc-backup:2026.6.2
+  restart: unless-stopped
+  networks: [mc]
+  secrets: [rcon_password]
+  logging: *logging
+
 services:
   # ── Velocity proxy: the only thing exposed to players ─────────────────────
   proxy:
-    image: itzg/mc-proxy:latest
+    # Latest verified versioned release (itzg cuts these less often than
+    # Velocity itself; see .github/dependabot.yml for future bumps).
+    image: itzg/mc-proxy:2025.10.0-java25
     restart: unless-stopped
     networks: [mc]
     ports:
       - "25565:25565" # the ONLY published port on the whole stack
     environment:
       TYPE: "VELOCITY"
-      VELOCITY_VERSION: "LATEST"
+      # Velocity ships x.y.z-SNAPSHOT version lines; itzg's finest-grained pin
+      # here is the version string — the build within it still floats
+      # (VELOCITY_BUILD_ID defaults to "latest").
+      VELOCITY_VERSION: "3.5.0-SNAPSHOT"
       TZ: "${TZ:-UTC}"
       MEMORY: "512M" # Velocity is tiny; it does no world simulation
 
@@ -89,6 +134,7 @@ services:
       - proxy_data:/server
     secrets: [forwarding_secret]
     depends_on: [lobby, survival, creative]
+    logging: *logging
 
   # ── Paper backends ─────────────────────────────────────────────────────────
   lobby:
@@ -132,6 +178,40 @@ services:
       - ./servers/creative/data:/data
       - ./servers/creative/config/paper-global.yml:/config/paper-global.yml:ro
 
+  # ── Backup sidecars: one per backend ───────────────────────────────────────
+  # Each pauses saves over RCON (save-off), flushes with save-all, tars /data
+  # to ./backups/<name>, then re-enables saves (save-on). Interval + retention
+  # come from .env (BACKUP_INTERVAL, PRUNE_BACKUPS_DAYS); no ports published.
+  backup-lobby:
+    <<: *backup-common
+    environment:
+      <<: *backup-env
+      RCON_HOST: "lobby"
+    volumes:
+      - ./servers/lobby/data:/data:ro   # tar reads the world; never writes
+      - ./backups/lobby:/backups
+    depends_on: [lobby]
+
+  backup-survival:
+    <<: *backup-common
+    environment:
+      <<: *backup-env
+      RCON_HOST: "survival"
+    volumes:
+      - ./servers/survival/data:/data:ro   # tar reads the world; never writes
+      - ./backups/survival:/backups
+    depends_on: [survival]
+
+  backup-creative:
+    <<: *backup-common
+    environment:
+      <<: *backup-env
+      RCON_HOST: "creative"
+    volumes:
+      - ./servers/creative/data:/data:ro   # tar reads the world; never writes
+      - ./backups/creative:/backups
+    depends_on: [creative]
+
 networks:
   mc:
     driver: bridge # services resolve each other by name (lobby, survival, ...)
@@ -142,3 +222,5 @@ volumes:
 secrets:
   forwarding_secret:
     file: ./secrets/forwarding.secret # gitignored; created by `make secret`
+  rcon_password:
+    file: ./secrets/rcon.secret # gitignored; created by `make secret`
