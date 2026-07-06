@@ -119,7 +119,7 @@ recreated).
 | `LOBBY_MODRINTH_PROJECTS`    | _(empty)_                               | Plugins on **lobby**: comma-separated Modrinth slugs.                    |
 | `SURVIVAL_MODRINTH_PROJECTS` | _(empty)_                               | Plugins on **survival**: comma-separated Modrinth slugs.                 |
 | `CREATIVE_MODRINTH_PROJECTS` | `fastasyncworldedit,axiom-paper-plugin` | Plugins on **creative**: comma-separated Modrinth slugs.                 |
-| `PROXY_SPIGET_PLUGINS`       | `19254,27448`                          | Plugins on **the proxy**: comma-separated Spiget resource IDs.           |
+| `PROXY_MODRINTH_PROJECTS`    | `viaversion,viabackwards`              | Plugins on **the proxy**: comma-separated Modrinth slugs.                |
 | `LOBBY_RCON_CMDS_STARTUP`    | _(empty = run nothing)_                | Console commands run each time `lobby` finishes booting.                 |
 | `CREATIVE_RCON_CMDS_STARTUP` | _(empty = run nothing)_                | Same for `creative`.                                                     |
 | `BACKUP_INTERVAL`            | `24h`                                  | How often each backup sidecar pauses saves and archives `/data`.         |
@@ -149,7 +149,7 @@ entry is removed.
 
 | Layer      | `.env` variable              | Source              | Defaults                                     |
 | ---------- | ---------------------------- | ------------------- | -------------------------------------------- |
-| proxy      | `PROXY_SPIGET_PLUGINS`       | Spiget resource IDs | ViaVersion (`19254`), ViaBackwards (`27448`) |
+| proxy      | `PROXY_MODRINTH_PROJECTS`    | Modrinth slugs      | ViaVersion, ViaBackwards                     |
 | `lobby`    | `LOBBY_MODRINTH_PROJECTS`    | Modrinth slugs      | _(none)_                                     |
 | `survival` | `SURVIVAL_MODRINTH_PROJECTS` | Modrinth slugs      | _(none)_                                     |
 | `creative` | `CREATIVE_MODRINTH_PROJECTS` | Modrinth slugs      | FastAsyncWorldEdit, Axiom (serverside half)  |
