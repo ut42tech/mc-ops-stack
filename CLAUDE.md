@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Minecraft server network (Velocity proxy + Paper backends) defined entirely as Docker Compose on [itzg](https://github.com/itzg/docker-minecraft-server) images. There is no application code, build step, or test suite — the "code" is `compose.yml`, `proxy/velocity.toml`, per-server `paper-global.yml` templates, and the Makefile.
+A Minecraft server network (Velocity proxy + Paper backends) defined entirely as Docker Compose on [itzg](https://github.com/itzg/docker-minecraft-server) images. There is no application code, build step, or test suite — the "code" is `compose.yml`, `proxy/velocity.toml`, the shared `paper/paper-global.yml`, and the Makefile.
 
 ## Commands
 
 ```bash
 make secret    # generate secrets/{forwarding,rcon}.secret (once; no-op for any that already exist)
-make setup     # materialize live config + .env from *.example templates
+make setup     # copy .env from .env.example (no-op if .env exists)
 make up        # docker compose up -d
 make down / restart / ps / logs
 ```
@@ -37,16 +37,16 @@ How the secret reaches Paper — the `CFG_` gotcha: itzg substitutes `${CFG_*}` 
 
 Config layering in `compose.yml`: backends share the `x-paper-common` / `&paper-env` YAML anchors; per-service blocks override with `<<: [*paper-env, *flat-world]`-style merges. Edit the anchor for network-wide changes, the service block for one server.
 
-Template pattern: committed `*.example` files are copied to gitignored live files by `make setup` (`.env`, `servers/*/config/paper-global.yml`). Edit the `.example`, then re-run `make setup` (it never overwrites existing live files — delete the live file first to regenerate). Runtime state (`servers/*/data/`, `compose.override.yml`) is gitignored; a local `compose.override.yml` may exist to trim memory for testing and is auto-merged by compose.
+Template pattern: `make setup` copies `.env.example` to a gitignored `.env` (never overwritten — delete `.env` to regenerate). All other config is committed and mounted read-only: `proxy/velocity.toml`, plus one shared `paper/paper-global.yml` mounted into every backend — it holds only the `${CFG_FORWARDING_SECRET}` placeholder, no secret material (substitution happens inside the container). If one server ever needs its own Paper config, point its mount at a dedicated file.
 
 Backups: one `itzg/mc-backup` sidecar per backend (`backup-lobby`/`backup-survival`/`backup-creative`), sharing the `x-backup-common`/`x-backup-env` anchors. Each mounts its backend's `/data` **read-only** (`:ro`) plus `./backups/<name>` writable, publishes no ports, and runs RCON `save-off` → tar → `save-on` on a loop. Interval and retention are `.env`-driven (`BACKUP_INTERVAL` default `24h`, `PRUNE_BACKUPS_DAYS` default `7`); archives are gitignored under `/backups/`.
 
 ## Conventions
 
-- **Plugins are declared, never committed as jars**: `MODRINTH_PROJECTS` on backends (matched to TYPE+VERSION at boot), `SPIGET_PLUGINS` (resource IDs) on the proxy since mc-proxy can't pull from Modrinth. Removing an entry makes itzg delete that plugin. Both are `.env`-driven (`PAPER_MODRINTH_PROJECTS`, `PROXY_SPIGET_PLUGINS`, comma-separated) with defaults in `compose.yml`.
+- **Plugins are declared, never committed as jars**: `MODRINTH_PROJECTS` per backend (matched to TYPE+VERSION at boot), `SPIGET_PLUGINS` (resource IDs) on the proxy since mc-proxy can't pull from Modrinth. Removing an entry makes itzg delete that plugin. All are `.env`-driven (`LOBBY_`/`SURVIVAL_`/`CREATIVE_MODRINTH_PROJECTS`, `PROXY_SPIGET_PLUGINS`, comma-separated) with defaults in `compose.yml` — building tools (FAWE, Axiom) default to creative only.
 - **RCON startup commands live in `.env`** (`LOBBY_RCON_CMDS_STARTUP`, `CREATIVE_RCON_CMDS_STARTUP`, newline-delimited inside double quotes) — compose `${VAR:-default}` interpolation rejects multi-line defaults, so they can't fall back in `compose.yml`. Command failures are non-fatal and only visible via `docker compose logs <backend> | grep "Rcon loop"`. Since MC 1.21.11 (26.x) gamerules use snake_case registry names (`spawn_mobs`, `advance_time`, `advance_weather`); old camelCase names fail with "Incorrect argument for command".
 - **Via\* (protocol translation) lives ONLY on the proxy.** Adding it to a backend too breaks joins with version mismatches.
 - **Version coupling**: `MC_VERSION` (in `.env`, e.g. `26.1.2`) and the backend image's Java variant move together — MC 26.1+ requires a `*-java25` tag; only drop to `*-java21` when pinning a 1.21.x version. Pin `MC_VERSION` to a stable release rather than `LATEST`.
 - **Image pinning + Dependabot**: every image (proxy, backends, backup sidecars) is pinned to a specific verified release, e.g. `itzg/minecraft-server:2026.7.0-java25`, `itzg/mc-proxy:2025.10.0-java25`, `itzg/mc-backup:2026.6.2`, plus `VELOCITY_VERSION: "3.5.0-SNAPSHOT"` (the finest pin itzg exposes — the build within that version string still floats). Never pin to `latest`. Dependabot (`.github/dependabot.yml`, `docker-compose` + `github-actions` ecosystems) opens weekly PRs to bump the image tags; `MC_VERSION` (see the version-coupling bullet above) and `VELOCITY_VERSION` are each a separate, manual bump, since both are env vars — not image tags — that Dependabot can't see.
 - **KISS**: minimal correct config only — Paper fills unspecified keys with defaults, so `paper-global.yml` holds just the forwarding block. Don't add preemptive tuning. Personal/site values (OPS, TZ, PROXY_MOTD) go through `.env`, not hardcoded in compose.
-- Adding a backend = copy a service block in `compose.yml` with its own `./servers/<name>/data:/data` mount, create `servers/<name>/config/paper-global.yml.example`, register `<name> = "<name>:25565"` under `[servers]` in `proxy/velocity.toml`, then `make setup && make up`.
+- Adding a backend = copy a service block in `compose.yml` with its own `./servers/<name>/data:/data` + `./servers/<name>/plugins:/data/plugins` mounts and `<NAME>_MODRINTH_PROJECTS` variable (the shared `paper/paper-global.yml` mount is reused as-is), register `<name> = "<name>:25565"` under `[servers]` in `proxy/velocity.toml`, then `make up`.
