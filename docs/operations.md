@@ -24,6 +24,10 @@ backend from backup, and rolling out image/version updates.
   (swap `backup-lobby` for `backup-survival` / `backup-creative`.) Runs
   immediately with the same save-off/tar/save-on flow, without waiting for
   `BACKUP_INTERVAL`.
+- On a first-ever boot (image pull + Paper download + world generation), the
+  startup backup can outrun its RCON retry window and fail once with an error
+  in `docker compose logs backup-<name>`; the sidecar restarts and succeeds on
+  the next cycle, so no action is needed.
 
 ## Restore procedure
 
@@ -50,13 +54,25 @@ Archives land in `backups/<name>/` as gzip-compressed tars named
    mkdir -p servers/<name>/data
    ```
 
-4. Extract the chosen archive into it:
+4. Sanity-check the archive before extracting — a truncated archive from an
+   interrupted backup errors here instead of mid-restore:
+
+   ```bash
+   tar tzf backups/<name>/<archive>.tar.gz > /dev/null
+   ```
+
+5. Extract the chosen archive into it:
 
    ```bash
    tar xzf backups/<name>/<archive>.tar.gz -C servers/<name>/data
    ```
 
-5. Bring the stack back up and verify:
+   mc-backup's default excludes (`*.jar`, `cache`, `logs`, `*.tmp`) mean the
+   restored `data/` isn't byte-identical to the original — itzg re-downloads
+   the server jar and Modrinth plugins on the next boot, so a jar-less restore
+   is expected.
+
+6. Bring the stack back up and verify:
 
    ```bash
    make up
@@ -89,3 +105,8 @@ Archives land in `backups/<name>/` as gzip-compressed tars named
      (`x-paper-common.image`) to match — 26.1+ requires a `*-java25` tag; only
      drop to `*-java21` when pinning a 1.21.x version.
   3. `docker compose up -d` to recreate the backends on the new version.
+
+- **`VELOCITY_VERSION` bump** (in `compose.yml`, on the `proxy` service) is
+  likewise manual — it's an env var, not an image tag, so Dependabot can't
+  see it. Check [PaperMC's downloads](https://papermc.io/downloads/velocity)
+  for a new Velocity version line, typically when bumping `MC_VERSION`.

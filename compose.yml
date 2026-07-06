@@ -179,9 +179,9 @@ services:
       - ./servers/creative/config/paper-global.yml:/config/paper-global.yml:ro
 
   # ── Backup sidecars: one per backend ───────────────────────────────────────
-  # Each pauses saves over RCON (save-off), tars /data to ./backups/<name>,
-  # then re-enables saves (save-all/save-on). Interval + retention come from
-  # .env (BACKUP_INTERVAL, PRUNE_BACKUPS_DAYS); no ports are published.
+  # Each pauses saves over RCON (save-off), flushes with save-all, tars /data
+  # to ./backups/<name>, then re-enables saves (save-on). Interval + retention
+  # come from .env (BACKUP_INTERVAL, PRUNE_BACKUPS_DAYS); no ports published.
   backup-lobby:
     <<: *backup-common
     environment:
