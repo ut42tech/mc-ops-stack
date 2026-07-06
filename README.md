@@ -68,7 +68,9 @@ flowchart LR
 ├── docs/
 │   └── operations.md      # backup/restore runbook, update procedure
 ├── proxy/
-│   └── velocity.toml      # proxy config template (mounted read-only)
+│   └── velocity.toml      # proxy config (mounted read-only)
+├── paper/
+│   └── paper-global.yml   # shared Paper config (mounted read-only into every backend)
 ├── secrets/
 │   ├── forwarding.secret  # shared HMAC secret       (gitignored; `make secret`)
 │   └── rcon.secret        # backends' RCON password  (gitignored; `make secret`)
@@ -76,26 +78,24 @@ flowchart LR
 │   └── <lobby|survival|creative>/  # tar archives from the backup sidecars (gitignored)
 └── servers/
     └── <lobby|survival|creative>/
-        ├── config/
-        │   ├── paper-global.yml.example  # committed template
-        │   └── paper-global.yml          # live copy    (gitignored; `make setup`)
-        └── data/                         # world, plugins, logs (gitignored)
+        ├── data/          # world, logs, server jar (gitignored)
+        └── plugins/       # plugin jars + their configs (gitignored)
 ```
 
-Config reaches the servers by two routes — templates are copied once, values are
-re-read every time a container is (re)created:
+Config reaches the servers by two routes — committed files are mounted read-only,
+values are re-read every time a container is (re)created:
 
 ```
-.env ────(compose ${VAR:-default})────▶ container env ──┐
-                                                        ├─(itzg boot: sync + ${CFG_*} expansion)─▶ live config
-*.example ──(make setup, copy once)──▶ mounted config ──┘
+.env ──────(compose ${VAR:-default})───▶ container env ──┐
+                                                         ├─(itzg boot: sync + ${CFG_*} expansion)─▶ live config
+proxy/ + paper/ ──(mounted read-only)──▶ mounted config ─┘
 ```
 
 ## Quick start
 
 ```bash
 make secret    # generate secrets/{forwarding,rcon}.secret  (run once)
-make setup     # create live config + .env from templates
+make setup     # create .env from .env.example
 $EDITOR .env   # set OPS (your username), TZ, PROXY_MOTD, ...
 make up        # docker compose up -d
 ```
@@ -116,7 +116,9 @@ recreated).
 | `OPS`                        | _(empty)_                              | Comma-separated operator usernames, applied to every backend.            |
 | `TZ`                         | `UTC`                                  | Timezone for log timestamps, e.g. `Asia/Tokyo`.                          |
 | `PROXY_MOTD`                 | `A Minecraft Server`                   | Server-list MOTD (the proxy's — the only one players see). MiniMessage tags allowed. |
-| `PAPER_MODRINTH_PROJECTS`    | `fastasyncworldedit,axiom-paper-plugin` | Plugins on **every backend**: comma-separated Modrinth slugs.            |
+| `LOBBY_MODRINTH_PROJECTS`    | _(empty)_                               | Plugins on **lobby**: comma-separated Modrinth slugs.                    |
+| `SURVIVAL_MODRINTH_PROJECTS` | _(empty)_                               | Plugins on **survival**: comma-separated Modrinth slugs.                 |
+| `CREATIVE_MODRINTH_PROJECTS` | `fastasyncworldedit,axiom-paper-plugin` | Plugins on **creative**: comma-separated Modrinth slugs.                 |
 | `PROXY_SPIGET_PLUGINS`       | `19254,27448`                          | Plugins on **the proxy**: comma-separated Spiget resource IDs.           |
 | `LOBBY_RCON_CMDS_STARTUP`    | _(empty = run nothing)_                | Console commands run each time `lobby` finishes booting.                 |
 | `CREATIVE_RCON_CMDS_STARTUP` | _(empty = run nothing)_                | Same for `creative`.                                                     |
@@ -145,13 +147,17 @@ Plugins are declared, never committed as jars: itzg downloads them at boot
 (matched to the server type and `MC_VERSION`) and **deletes** any plugin whose
 entry is removed.
 
-| Layer         | `.env` variable           | Source              | Defaults                                       |
-| ------------- | ------------------------- | ------------------- | ---------------------------------------------- |
-| proxy         | `PROXY_SPIGET_PLUGINS`    | Spiget resource IDs | ViaVersion (`19254`), ViaBackwards (`27448`)   |
-| every backend | `PAPER_MODRINTH_PROJECTS` | Modrinth slugs      | FastAsyncWorldEdit, Axiom (serverside half)    |
+| Layer      | `.env` variable              | Source              | Defaults                                     |
+| ---------- | ---------------------------- | ------------------- | -------------------------------------------- |
+| proxy      | `PROXY_SPIGET_PLUGINS`       | Spiget resource IDs | ViaVersion (`19254`), ViaBackwards (`27448`) |
+| `lobby`    | `LOBBY_MODRINTH_PROJECTS`    | Modrinth slugs      | _(none)_                                     |
+| `survival` | `SURVIVAL_MODRINTH_PROJECTS` | Modrinth slugs      | _(none)_                                     |
+| `creative` | `CREATIVE_MODRINTH_PROJECTS` | Modrinth slugs      | FastAsyncWorldEdit, Axiom (serverside half)  |
 
 - **Via\* lives ONLY on the proxy** (protocol translation for older/newer
   clients). Adding it to a backend as well breaks joins with version mismatches.
+- **Each backend declares its own list** — building tools (FAWE, Axiom) default
+  to creative only; network-wide plugins are simply listed on every backend.
 - Axiom multiplayer use requires a commercial license or a whitelist from the
   Axiom Discord; players also need the Axiom client mod and op permission.
 
@@ -191,11 +197,12 @@ change it together with the backend image's `-javaNN` variant (26.1+ needs
 ## Add a server
 
 1. Copy a backend block in `compose.yml` (e.g. `survival:`) under a new name,
-   with its own `./servers/<name>/data:/data` mount.
-2. Create `servers/<name>/config/paper-global.yml.example` (copy an existing
-   one) so `make setup` can materialize it; `/data` is created on first run.
-3. Add `<name> = "<name>:25565"` under `[servers]` in `proxy/velocity.toml`.
-4. `make setup && make up`.
+   with its own `./servers/<name>/data:/data` and
+   `./servers/<name>/plugins:/data/plugins` mounts and its own
+   `<NAME>_MODRINTH_PROJECTS` variable. The shared `./paper/paper-global.yml`
+   mount is reused as-is; `/data` is created on first run.
+2. Add `<name> = "<name>:25565"` under `[servers]` in `proxy/velocity.toml`.
+3. `make up`.
 
 ## Troubleshooting
 

@@ -12,15 +12,9 @@ secret:
 		fi; \
 	done
 
-## Materialize per-server live config from committed *.example templates.
+## Materialize .env from the committed .env.example template (kept if it exists).
 setup:
-	@for d in servers/*/config; do \
-		if [ -f "$$d/paper-global.yml.example" ] && [ ! -f "$$d/paper-global.yml" ]; then \
-			cp "$$d/paper-global.yml.example" "$$d/paper-global.yml"; \
-			echo "Created $$d/paper-global.yml"; \
-		fi; \
-	done
-	@[ -f .env ] || cp .env.example .env
+	@[ -f .env ] || { cp .env.example .env; echo "Created .env"; }
 
 up:
 	docker compose up -d

@@ -24,7 +24,7 @@
 #
 # First run:
 #   make secret      # generate ./secrets/{forwarding,rcon}.secret  (once)
-#   make setup       # materialize per-server config + .env from *.example templates
+#   make setup       # copy .env from .env.example
 #   make up
 name: mc-stack
 
@@ -50,10 +50,6 @@ x-paper-env: &paper-env
   # RCON is reachable only on the internal `mc` network (no port is published),
   # but still needs a password so the backup sidecars can pause/resume saves.
   RCON_PASSWORD_FILE: "/run/secrets/rcon_password"
-
-  # Comma-separated Modrinth slugs, resolved against TYPE+VERSION at boot;
-  # removing one has itzg delete it. Plugin notes live in .env.example.
-  MODRINTH_PROJECTS: "${PAPER_MODRINTH_PROJECTS:-fastasyncworldedit,axiom-paper-plugin}"
 
 # ── Log rotation shared by every service ─────────────────────────────────────
 # Minecraft servers log heavily; the json-file driver is unbounded by
@@ -153,10 +149,12 @@ services:
       # at 0,0,0. Commands live in .env — ${VAR:-…} can't hold multi-line
       # defaults, and empty/unset makes itzg skip the RCON startup loop.
       RCON_CMDS_STARTUP: "${LOBBY_RCON_CMDS_STARTUP:-}"
+      # Plugins on this backend only — Modrinth slugs; notes live in .env.example.
+      MODRINTH_PROJECTS: "${LOBBY_MODRINTH_PROJECTS:-}"
     volumes:
       - ./servers/lobby/data:/data
       - ./servers/lobby/plugins:/data/plugins
-      - ./servers/lobby/config/paper-global.yml:/config/paper-global.yml:ro
+      - ./paper/paper-global.yml:/config/paper-global.yml:ro
 
   survival:
     <<: *paper-common
@@ -165,10 +163,12 @@ services:
       MEMORY: "4G"
       MOTD: "Survival"
       DIFFICULTY: "normal"
+      # Plugins on this backend only — Modrinth slugs; notes live in .env.example.
+      MODRINTH_PROJECTS: "${SURVIVAL_MODRINTH_PROJECTS:-}"
     volumes:
       - ./servers/survival/data:/data
       - ./servers/survival/plugins:/data/plugins
-      - ./servers/survival/config/paper-global.yml:/config/paper-global.yml:ro
+      - ./paper/paper-global.yml:/config/paper-global.yml:ro
 
   creative:
     <<: *paper-common
@@ -179,10 +179,12 @@ services:
       MODE: "creative"
       # Superflat like the lobby; pin the spawn to the surface at 0,0,0 (.env).
       RCON_CMDS_STARTUP: "${CREATIVE_RCON_CMDS_STARTUP:-}"
+      # Plugins on this backend only — building tools live here, not network-wide.
+      MODRINTH_PROJECTS: "${CREATIVE_MODRINTH_PROJECTS:-fastasyncworldedit,axiom-paper-plugin}"
     volumes:
       - ./servers/creative/data:/data
       - ./servers/creative/plugins:/data/plugins
-      - ./servers/creative/config/paper-global.yml:/config/paper-global.yml:ro
+      - ./paper/paper-global.yml:/config/paper-global.yml:ro
 
   # ── Backup sidecars: one per backend ───────────────────────────────────────
   # Each pauses saves over RCON (save-off), flushes with save-all, tars /data
