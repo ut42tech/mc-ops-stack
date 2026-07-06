@@ -119,10 +119,20 @@ services:
       MEMORY: "512M" # Velocity is tiny; it does no world simulation
 
       # Via* protocol translation lives ONLY on the proxy — adding it to a
-      # backend as well breaks joins with version mismatches. mc-proxy can't
-      # pull from Modrinth, so these are Spiget resource IDs (auto-latest):
-      # ViaVersion=19254, ViaBackwards=27448.
-      SPIGET_PLUGINS: "${PROXY_SPIGET_PLUGINS:-19254,27448}"
+      # backend as well breaks joins with version mismatches. ViaBackwards'
+      # Spiget listing is "external" (hosted on Hangar, not SpigotMC's CDN),
+      # so Spiget's /download redirects to an HTML page instead of the jar
+      # and itzg's unzip fails; Modrinth publishes velocity-loader builds of
+      # both plugins directly, so use that instead. Needs MINECRAFT_VERSION
+      # (not MC_VERSION) — that's the exact env var mc-proxy's Modrinth path reads.
+      MINECRAFT_VERSION: "${MC_VERSION:-LATEST}"
+      MODRINTH_PROJECTS: "${PROXY_MODRINTH_PROJECTS:-viaversion,viabackwards}"
+      # proxy_data is a named volume, so plugin jars survive container
+      # recreation — without this, changing MODRINTH_PROJECTS leaves old jars
+      # behind and Velocity refuses to load a duplicate plugin ID. Safe here
+      # since nothing is ever manually dropped into the proxy's plugins dir
+      # (unlike the backends' bind-mounted ./servers/<name>/plugins).
+      REMOVE_OLD_PLUGINS: "TRUE"
 
       # itzg copies /config/velocity.toml into /server and expands ${CFG_*}
       # there; velocity.toml references ${CFG_MOTD}. The CFG_ prefix is mandatory.
