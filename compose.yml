@@ -93,7 +93,7 @@ x-backup-env: &backup-env
 x-backup-common: &backup-common
   # Pinned to the latest verified stable release (2026-07-04); see
   # x-paper-common above for the Dependabot note.
-  image: itzg/mc-backup:2026.6.2
+  image: itzg/mc-backup:2026.7.3
   restart: unless-stopped
   networks: [mc]
   secrets: [rcon_password]
