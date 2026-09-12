@@ -104,7 +104,7 @@ services:
   proxy:
     # Latest verified versioned release (itzg cuts these less often than
     # Velocity itself; see .github/dependabot.yml for future bumps).
-    image: itzg/mc-proxy:2025.10.0-java25
+    image: itzg/mc-proxy:2026.9.1-java25
     restart: unless-stopped
     networks: [mc]
     ports:
